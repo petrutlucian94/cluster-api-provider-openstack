@@ -49,16 +49,21 @@ func (s *Service) ReconcileLoadBalancer(openStackCluster *infrav1.OpenStackClust
 		return err
 	}
 
-	floatingIPAddress := openStackCluster.Spec.ControlPlaneEndpoint.Host
-	if openStackCluster.Spec.APIServerFloatingIP != "" {
-		floatingIPAddress = openStackCluster.Spec.APIServerFloatingIP
-	}
-	fp, err := s.networkingService.GetOrCreateFloatingIP(openStackCluster, clusterName, floatingIPAddress)
-	if err != nil {
-		return err
-	}
-	if err = s.networkingService.AssociateFloatingIP(openStackCluster, fp, lb.VipPortID); err != nil {
-		return err
+	loadBalancerIP := openStackCluster.Spec.ControlPlaneEndpoint.Host
+	useFIP := openStackCluster.Spec.UseControlPlaneFIP != nil && *openStackCluster.Spec.UseControlPlaneFIP
+	if useFIP {
+		floatingIPAddress := openStackCluster.Spec.ControlPlaneEndpoint.Host
+		if openStackCluster.Spec.APIServerFloatingIP != "" {
+			floatingIPAddress = openStackCluster.Spec.APIServerFloatingIP
+		}
+		fp, err := s.networkingService.GetOrCreateFloatingIP(openStackCluster, clusterName, floatingIPAddress)
+		if err != nil {
+			return err
+		}
+		loadBalancerIP = fp.FloatingIP
+		if err = s.networkingService.AssociateFloatingIP(openStackCluster, fp, lb.VipPortID); err != nil {
+			return err
+		}
 	}
 
 	portList := []int{int(openStackCluster.Spec.ControlPlaneEndpoint.Port)}
@@ -84,7 +89,7 @@ func (s *Service) ReconcileLoadBalancer(openStackCluster *infrav1.OpenStackClust
 		Name:       lb.Name,
 		ID:         lb.ID,
 		InternalIP: lb.VipAddress,
-		IP:         fp.FloatingIP,
+		IP:         loadBalancerIP,
 	}
 	return nil
 }
